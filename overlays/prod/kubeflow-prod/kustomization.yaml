@@ -36,6 +36,7 @@ sortOptions:
 
 resources:
 - namespace.yaml
+- oauth2-proxy-vs.yaml
 # Cert-Manager Kubeflow Issuer
 - ../../../common/cert-manager/kubeflow-issuer/base
 # NetworkPolicies
