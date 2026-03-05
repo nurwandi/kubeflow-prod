@@ -195,6 +195,9 @@ patches:
     name: kserve-models-web-app
   patch: |-
     - op: replace
+      path: /spec/gateways/0
+      value: kubeflow-prod/kubeflow-gateway
+    - op: replace
       path: /spec/http/0/route/0/destination/host
       value: kserve-models-web-app.kubeflow-prod.svc.cluster.local
 
@@ -303,8 +306,54 @@ patches:
       value: cluster.local/ns/kubeflow-prod/sa/centraldashboard
 
 # ============================================================
-# G: ml-pipeline-ui AuthorizationPolicy → prod ingressgateway SA
+# G: Web-facing AuthorizationPolicies → prod ingressgateway SA
 # ============================================================
+# These ALLOW policies control which SA can access web-facing services
+# via the ingressgateway. Must point to prod ingressgateway SA.
+- target:
+    kind: AuthorizationPolicy
+    name: central-dashboard
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
+- target:
+    kind: AuthorizationPolicy
+    name: jupyter-web-app
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
+- target:
+    kind: AuthorizationPolicy
+    name: katib-ui
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
+- target:
+    kind: AuthorizationPolicy
+    name: kserve-models-web-app
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
+- target:
+    kind: AuthorizationPolicy
+    name: tensorboards-web-app
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
+- target:
+    kind: AuthorizationPolicy
+    name: volumes-web-app
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
+
+# G2: ml-pipeline-ui AuthorizationPolicy → prod ingressgateway SA
 - target:
     kind: AuthorizationPolicy
     name: ml-pipeline-ui
@@ -380,8 +429,23 @@ patches:
     metadata:
       name: profiles-config
     data:
+      ISTIO_INGRESS_GATEWAY_PRINCIPAL: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
       KFP_UI_PRINCIPAL: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-ui
       NOTEBOOK_CONTROLLER_PRINCIPAL: cluster.local/ns/kubeflow-prod/sa/notebook-controller-service-account
+
+# ============================================================
+# H6: ConfigMap pipeline-install-config → prod ingressgateway SA
+# ============================================================
+- target:
+    kind: ConfigMap
+    name: pipeline-install-config
+  patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: pipeline-install-config
+    data:
+      ISTIO_INGRESS_GATEWAY_PRINCIPAL: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
 
 # ============================================================
 # H5: ConfigMap sync.py → kubeflow-prod SPIFFE principal
