@@ -1,0 +1,840 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kubeflow-prod
+
+sortOptions:
+  order: legacy
+  legacySortOptions:
+    orderFirst:
+    - Namespace
+    - ResourceQuota
+    - StorageClass
+    - CustomResourceDefinition
+    - MutatingWebhookConfiguration
+    - ServiceAccount
+    - PodSecurityPolicy
+    - NetworkPolicy
+    - Role
+    - ClusterRole
+    - RoleBinding
+    - ClusterRoleBinding
+    - ConfigMap
+    - Secret
+    - Endpoints
+    - Service
+    - LimitRange
+    - PriorityClass
+    - PersistentVolume
+    - PersistentVolumeClaim
+    - Deployment
+    - StatefulSet
+    - CronJob
+    - PodDisruptionBudget
+    orderLast:
+    - ValidatingWebhookConfiguration
+
+resources:
+- namespace.yaml
+# Cert-Manager Kubeflow Issuer
+- ../../../common/cert-manager/kubeflow-issuer/base
+# NetworkPolicies
+- ../../../common/networkpolicies/base
+# Kubeflow Roles
+- ../../../common/kubeflow-roles/base
+# Kubeflow Istio Resources
+- ../../../common/istio/kubeflow-istio-resources/base
+# Kubeflow Pipelines
+- ../../../applications/pipeline/upstream/env/cert-manager/platform-agnostic-multi-user
+# Katib
+- ../../../applications/katib/upstream/installs/katib-with-kubeflow
+# Central Dashboard
+- ../../../applications/centraldashboard/overlays/oauth2-proxy
+# Admission Webhook
+- ../../../applications/admission-webhook/upstream/overlays/cert-manager
+# Jupyter Web App
+- ../../../applications/jupyter/jupyter-web-app/upstream/overlays/istio
+# Notebook Controller
+- ../../../applications/jupyter/notebook-controller/upstream/overlays/kubeflow
+# Profiles + KFAM with PSS
+- ../../../applications/profiles/pss
+# PVC Viewer
+- ../../../applications/pvcviewer-controller/upstream/base
+# Volumes Web App
+- ../../../applications/volumes-web-app/upstream/overlays/istio
+# Tensorboards Controller
+- ../../../applications/tensorboard/tensorboard-controller/upstream/overlays/kubeflow
+# Tensorboard Web App
+- ../../../applications/tensorboard/tensorboards-web-app/upstream/overlays/istio
+# Training Operator
+- ../../../applications/training-operator/upstream/overlays/kubeflow
+# User namespace
+- ../../../common/user-namespace/base
+# KServe
+- ../../../applications/kserve/kserve
+- ../../../applications/kserve/models-web-app/overlays/kubeflow
+# Spark Operator
+- ../../../applications/spark/spark-operator/overlays/kubeflow
+
+patches:
+# ============================================================
+# A: Gateway selector → ingressgateway-prod
+# ============================================================
+- target:
+    kind: Gateway
+    name: kubeflow-gateway
+  patch: |-
+    - op: replace
+      path: /spec/selector/istio
+      value: ingressgateway-prod
+
+# ============================================================
+# B: NodeSelector → all pods on nsqsurv (.101)
+# ============================================================
+- target:
+    kind: Deployment
+  patch: |-
+    - op: add
+      path: /spec/template/spec/nodeSelector
+      value:
+        kubernetes.io/hostname: nsqsurv
+- target:
+    kind: StatefulSet
+  patch: |-
+    - op: add
+      path: /spec/template/spec/nodeSelector
+      value:
+        kubernetes.io/hostname: nsqsurv
+
+# ============================================================
+# C: DestinationRule FQDN → .kubeflow-prod.svc.cluster.local
+# ============================================================
+- target:
+    kind: DestinationRule
+    name: jupyter-web-app
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: jupyter-web-app-service.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: metadata-grpc-service
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: metadata-grpc-service.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: ml-pipeline
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: ml-pipeline.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: ml-pipeline-minio
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: minio-service.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: ml-pipeline-mysql
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: mysql.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: ml-pipeline-ui
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: ml-pipeline-ui.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: ml-pipeline-visualizationserver
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: ml-pipeline-visualizationserver.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: tensorboards-web-app
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: tensorboards-web-app-service.kubeflow-prod.svc.cluster.local
+- target:
+    kind: DestinationRule
+    name: volumes-web-app
+  patch: |-
+    - op: replace
+      path: /spec/host
+      value: volumes-web-app-service.kubeflow-prod.svc.cluster.local
+
+# ============================================================
+# D: VirtualService FQDN → .kubeflow-prod.svc.cluster.local
+# ============================================================
+- target:
+    kind: VirtualService
+    name: centraldashboard
+  patch: |-
+    - op: replace
+      path: /spec/http/0/route/0/destination/host
+      value: centraldashboard.kubeflow-prod.svc.cluster.local
+- target:
+    kind: VirtualService
+    name: metadata-grpc
+  patch: |-
+    - op: replace
+      path: /spec/http/0/route/0/destination/host
+      value: metadata-envoy-service.kubeflow-prod.svc.cluster.local
+- target:
+    kind: VirtualService
+    name: kserve-models-web-app
+  patch: |-
+    - op: replace
+      path: /spec/http/0/route/0/destination/host
+      value: kserve-models-web-app.kubeflow-prod.svc.cluster.local
+
+# ============================================================
+# E: Certificate FQDN → .kubeflow-prod.svc
+# ============================================================
+- target:
+    kind: Certificate
+    name: serving-cert
+  patch: |-
+    - op: replace
+      path: /spec/commonName
+      value: kserve-webhook-server-service.kubeflow-prod.svc
+    - op: replace
+      path: /spec/dnsNames/0
+      value: kserve-webhook-server-service.kubeflow-prod.svc
+
+# ============================================================
+# F: AuthorizationPolicy SPIFFE → ns/kubeflow-prod/sa/
+# ============================================================
+- target:
+    kind: AuthorizationPolicy
+    name: minio-service
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline
+    - op: replace
+      path: /spec/rules/1/from/0/source/principals/0
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-ui
+- target:
+    kind: AuthorizationPolicy
+    name: ml-pipeline
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/1
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-ui
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/2
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-persistenceagent
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/3
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-scheduledworkflow
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/4
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-viewer-crd-service-account
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/5
+      value: cluster.local/ns/kubeflow-prod/sa/kubeflow-pipelines-cache
+- target:
+    kind: AuthorizationPolicy
+    name: ml-pipeline-visualizationserver
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/1
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-ui
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/2
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-persistenceagent
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/3
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-scheduledworkflow
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/4
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-viewer-crd-service-account
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/5
+      value: cluster.local/ns/kubeflow-prod/sa/kubeflow-pipelines-cache
+- target:
+    kind: AuthorizationPolicy
+    name: mysql
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/1
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-ui
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/2
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-persistenceagent
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/3
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-scheduledworkflow
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/4
+      value: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-viewer-crd-service-account
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/5
+      value: cluster.local/ns/kubeflow-prod/sa/kubeflow-pipelines-cache
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/6
+      value: cluster.local/ns/kubeflow-prod/sa/metadata-grpc-server
+- target:
+    kind: AuthorizationPolicy
+    name: profiles-kfam
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/kubeflow-prod/sa/centraldashboard
+
+# ============================================================
+# G: ml-pipeline-ui AuthorizationPolicy → prod ingressgateway SA
+# ============================================================
+- target:
+    kind: AuthorizationPolicy
+    name: ml-pipeline-ui
+  patch: |-
+    - op: replace
+      path: /spec/rules/0/from/0/source/principals/0
+      value: cluster.local/ns/istio-system/sa/istio-ingressgateway-prod-service-account
+
+# ============================================================
+# H: ConfigMap inferenceservice-config → kubeflow-prod gateway
+# ============================================================
+- target:
+    kind: ConfigMap
+    name: inferenceservice-config
+  patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: inferenceservice-config
+    data:
+      ingress: |-
+        {
+          "enableGatewayApi": false,
+          "kserveIngressGateway": "kserve/kserve-ingress-gateway",
+          "ingressGateway": "kubeflow-prod/kubeflow-gateway",
+          "localGateway": "knative-serving/knative-local-gateway",
+          "localGatewayService": "knative-local-gateway.istio-system.svc.cluster.local",
+          "ingressDomain": "example.com",
+          "ingressClassName": "istio",
+          "domainTemplate": "{{ .Name }}-{{ .Namespace }}.{{ .IngressDomain }}",
+          "urlScheme": "http",
+          "disableIstioVirtualHost": false,
+          "disableIngressCreation": false
+        }
+
+# ============================================================
+# H2: ConfigMap notebook-controller-config → kubeflow-prod gateway
+# ============================================================
+- target:
+    kind: ConfigMap
+    name: notebook-controller-config
+  patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: notebook-controller-config
+    data:
+      ISTIO_GATEWAY: kubeflow-prod/kubeflow-gateway
+
+# ============================================================
+# H3: ConfigMap tensorboard-controller-config → kubeflow-prod gateway
+# ============================================================
+- target:
+    kind: ConfigMap
+    name: tensorboard-controller-config
+  patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: tensorboard-controller-config
+    data:
+      ISTIO_GATEWAY: kubeflow-prod/kubeflow-gateway
+
+# ============================================================
+# H4: ConfigMap profiles-config → kubeflow-prod SPIFFE principals
+# ============================================================
+- target:
+    kind: ConfigMap
+    name: profiles-config
+  patch: |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: profiles-config
+    data:
+      KFP_UI_PRINCIPAL: cluster.local/ns/kubeflow-prod/sa/ml-pipeline-ui
+      NOTEBOOK_CONTROLLER_PRINCIPAL: cluster.local/ns/kubeflow-prod/sa/notebook-controller-service-account
+
+# ============================================================
+# H5: ConfigMap sync.py → kubeflow-prod SPIFFE principal
+# ============================================================
+- target:
+    kind: ConfigMap
+    name: kubeflow-pipelines-profile-controller-code
+  path: sync-py-patch.yaml
+
+# ============================================================
+# I: Katib webhook matchCondition → kubeflow-prod SA
+# ============================================================
+- target:
+    kind: MutatingWebhookConfiguration
+    name: katib.kubeflow.org
+  patch: |-
+    - op: replace
+      path: /webhooks/1/matchConditions/0/expression
+      value: 'request.userInfo.username != "system:serviceaccount:kubeflow-prod:katib-controller"'
+
+# ============================================================
+# J+K: Webhook renames (prod- prefix) + KServe cert annotation fixes
+# ============================================================
+# --- MutatingWebhookConfigurations ---
+- target:
+    kind: MutatingWebhookConfiguration
+    name: admission-webhook-mutating-webhook-configuration
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-admission-webhook-mutating-webhook-configuration
+- target:
+    kind: MutatingWebhookConfiguration
+    name: cache-webhook-kubeflow
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-cache-webhook-kubeflow
+- target:
+    kind: MutatingWebhookConfiguration
+    name: inferenceservice.serving.kserve.io
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-inferenceservice.serving.kserve.io
+    - op: replace
+      path: /metadata/annotations/cert-manager.io~1inject-ca-from
+      value: kubeflow-prod/serving-cert
+- target:
+    kind: MutatingWebhookConfiguration
+    name: katib.kubeflow.org
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-katib.kubeflow.org
+- target:
+    kind: MutatingWebhookConfiguration
+    name: pvcviewer-mutating-webhook-configuration
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-pvcviewer-mutating-webhook-configuration
+- target:
+    kind: MutatingWebhookConfiguration
+    name: spark-operator-webhook
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-spark-operator-webhook
+# --- ValidatingWebhookConfigurations ---
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: clusterservingruntime.serving.kserve.io
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-clusterservingruntime.serving.kserve.io
+    - op: replace
+      path: /metadata/annotations/cert-manager.io~1inject-ca-from
+      value: kubeflow-prod/serving-cert
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: inferencegraph.serving.kserve.io
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-inferencegraph.serving.kserve.io
+    - op: replace
+      path: /metadata/annotations/cert-manager.io~1inject-ca-from
+      value: kubeflow-prod/serving-cert
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: inferenceservice.serving.kserve.io
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-inferenceservice.serving.kserve.io
+    - op: replace
+      path: /metadata/annotations/cert-manager.io~1inject-ca-from
+      value: kubeflow-prod/serving-cert
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: katib.kubeflow.org
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-katib.kubeflow.org
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: localmodelcache.serving.kserve.io
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-localmodelcache.serving.kserve.io
+    - op: replace
+      path: /metadata/annotations/cert-manager.io~1inject-ca-from
+      value: kubeflow-prod/serving-cert
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: pvcviewer-validating-webhook-configuration
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-pvcviewer-validating-webhook-configuration
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: servingruntime.serving.kserve.io
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-servingruntime.serving.kserve.io
+    - op: replace
+      path: /metadata/annotations/cert-manager.io~1inject-ca-from
+      value: kubeflow-prod/serving-cert
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: spark-operator-webhook
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-spark-operator-webhook
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: trainedmodel.serving.kserve.io
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-trainedmodel.serving.kserve.io
+    - op: replace
+      path: /metadata/annotations/cert-manager.io~1inject-ca-from
+      value: kubeflow-prod/serving-cert
+- target:
+    kind: ValidatingWebhookConfiguration
+    name: validator.training-operator.kubeflow.org
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: prod-validator.training-operator.kubeflow.org
+
+# ============================================================
+# L: ClusterRoleBinding renames (-prod suffix)
+# Also fixes CRB subject namespace where needed
+# ============================================================
+- target:
+    kind: ClusterRoleBinding
+    name: admission-webhook-cluster-role-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: admission-webhook-cluster-role-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: argo-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: argo-binding-prod
+    - op: replace
+      path: /subjects/0/namespace
+      value: kubeflow-prod
+- target:
+    kind: ClusterRoleBinding
+    name: centraldashboard
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: centraldashboard-prod
+    - op: replace
+      path: /subjects/0/namespace
+      value: kubeflow-prod
+- target:
+    kind: ClusterRoleBinding
+    name: jupyter-web-app-cluster-role-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: jupyter-web-app-cluster-role-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: katib-controller
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: katib-controller-prod
+- target:
+    kind: ClusterRoleBinding
+    name: katib-ui
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: katib-ui-prod
+- target:
+    kind: ClusterRoleBinding
+    name: kserve-localmodel-manager-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: kserve-localmodel-manager-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: kserve-localmodelnode-agent-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: kserve-localmodelnode-agent-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: kserve-manager-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: kserve-manager-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: kserve-models-web-app-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: kserve-models-web-app-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: kserve-proxy-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: kserve-proxy-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: kubeflow-pipelines-cache-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: kubeflow-pipelines-cache-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: kubeflow-pipelines-metadata-writer-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: kubeflow-pipelines-metadata-writer-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: meta-controller-cluster-role-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: meta-controller-cluster-role-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: ml-pipeline
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: ml-pipeline-prod
+- target:
+    kind: ClusterRoleBinding
+    name: ml-pipeline-persistenceagent-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: ml-pipeline-persistenceagent-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: ml-pipeline-scheduledworkflow-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: ml-pipeline-scheduledworkflow-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: ml-pipeline-ui
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: ml-pipeline-ui-prod
+- target:
+    kind: ClusterRoleBinding
+    name: ml-pipeline-viewer-crd-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: ml-pipeline-viewer-crd-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: notebook-controller-role-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: notebook-controller-role-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: profiles-cluster-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: profiles-cluster-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: pvcviewer-manager-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: pvcviewer-manager-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: pvcviewer-proxy-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: pvcviewer-proxy-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: spark-operator-controller
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: spark-operator-controller-prod
+- target:
+    kind: ClusterRoleBinding
+    name: spark-operator-webhook
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: spark-operator-webhook-prod
+- target:
+    kind: ClusterRoleBinding
+    name: tensorboard-controller-manager-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: tensorboard-controller-manager-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: tensorboard-controller-proxy-rolebinding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: tensorboard-controller-proxy-rolebinding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: tensorboards-web-app-cluster-role-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: tensorboards-web-app-cluster-role-binding-prod
+- target:
+    kind: ClusterRoleBinding
+    name: training-operator
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: training-operator-prod
+- target:
+    kind: ClusterRoleBinding
+    name: volumes-web-app-cluster-role-binding
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: volumes-web-app-cluster-role-binding-prod
+
+# ============================================================
+# Category M: Spark Operator hardcoded namespace/webhook-name args
+# ============================================================
+# spark-operator embeds namespace and webhook names in container args
+# which the kustomize namespace transformer does not rewrite.
+
+# M1: spark-operator-webhook — fix 5 args
+- target:
+    kind: Deployment
+    name: spark-operator-webhook
+  patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: spark-operator-webhook
+    spec:
+      template:
+        spec:
+          containers:
+          - name: spark-operator-webhook
+            args:
+            - webhook
+            - start
+            - --zap-log-level=info
+            - '--namespaces=""'
+            - --webhook-secret-name=spark-operator-webhook-certs
+            - --webhook-secret-namespace=kubeflow-prod
+            - --webhook-svc-name=spark-operator-webhook-svc
+            - --webhook-svc-namespace=kubeflow-prod
+            - --webhook-port=9443
+            - --mutating-webhook-name=prod-spark-operator-webhook
+            - --validating-webhook-name=prod-spark-operator-webhook
+            - --enable-metrics=true
+            - --metrics-bind-address=:8080
+            - --metrics-endpoint=/metrics
+            - --metrics-prefix=
+            - --metrics-labels=app_type
+            - --leader-election=true
+            - --leader-election-lock-name=spark-operator-webhook-lock
+            - --leader-election-lock-namespace=kubeflow-prod
+
+# M2: spark-operator-controller — fix leader-election-lock-namespace
+- target:
+    kind: Deployment
+    name: spark-operator-controller
+  patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: spark-operator-controller
+    spec:
+      template:
+        spec:
+          containers:
+          - name: spark-operator-controller
+            args:
+            - controller
+            - start
+            - --zap-log-level=info
+            - '--namespaces=""'
+            - --controller-threads=10
+            - --enable-ui-service=true
+            - --enable-metrics=true
+            - --metrics-bind-address=:8080
+            - --metrics-endpoint=/metrics
+            - --metrics-prefix=
+            - --metrics-labels=app_type
+            - "--metrics-job-start-latency-buckets=30,60,90,120,150,180,210,240,270,300"
+            - --leader-election=true
+            - --leader-election-lock-name=spark-operator-controller-lock
+            - --leader-election-lock-namespace=kubeflow-prod
+            - --workqueue-ratelimiter-bucket-qps=50
+            - --workqueue-ratelimiter-bucket-size=500
+            - --workqueue-ratelimiter-max-delay=6h
+            - --driver-pod-creation-grace-period=10s
+            - --max-tracked-executor-per-app=1000
