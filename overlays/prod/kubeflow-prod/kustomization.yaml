@@ -828,7 +828,28 @@ patches:
       value: volumes-web-app-cluster-role-binding-prod
 
 # ============================================================
-# Category N: RoleBinding subject namespace fix
+# Category N: Centraldashboard fixes
+# ============================================================
+# N1: PROFILES_KFAM_SERVICE_HOST env var points to dev namespace
+- target:
+    kind: Deployment
+    name: centraldashboard
+  patch: |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: centraldashboard
+    spec:
+      template:
+        spec:
+          containers:
+          - name: centraldashboard
+            env:
+            - name: PROFILES_KFAM_SERVICE_HOST
+              value: profiles-kfam.kubeflow-prod
+
+# ============================================================
+# N2: RoleBinding subject namespace fix
 # ============================================================
 # namespace transformer missed subjects[].namespace in this RoleBinding
 - target:
