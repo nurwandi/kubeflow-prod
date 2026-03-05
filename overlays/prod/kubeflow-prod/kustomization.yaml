@@ -828,6 +828,18 @@ patches:
       value: volumes-web-app-cluster-role-binding-prod
 
 # ============================================================
+# Category N: RoleBinding subject namespace fix
+# ============================================================
+# namespace transformer missed subjects[].namespace in this RoleBinding
+- target:
+    kind: RoleBinding
+    name: centraldashboard
+  patch: |-
+    - op: replace
+      path: /subjects/0/namespace
+      value: kubeflow-prod
+
+# ============================================================
 # Category M: Spark Operator hardcoded namespace/webhook-name args
 # ============================================================
 # spark-operator embeds namespace and webhook names in container args
