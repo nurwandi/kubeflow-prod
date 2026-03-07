@@ -1,0 +1,35 @@
+## Policy 1: Block dev controllers from modifying Istio resources in production-namespace
+## This prevents race conditions where both dev (kubeflow) and prod (kubeflow-prod)
+## controllers overwrite each other's VirtualServices and AuthorizationPolicies.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: block-dev-controllers-in-prod-ns
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["networking.istio.io"]
+      apiVersions: ["*"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["virtualservices"]
+    - apiGroups: ["security.istio.io"]
+      apiVersions: ["*"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["authorizationpolicies"]
+  matchConditions:
+  - name: only-production-namespace
+    expression: "object.metadata.namespace == 'production-namespace'"
+  - name: only-dev-service-accounts
+    expression: "request.userInfo.username.startsWith('system:serviceaccount:kubeflow:')"
+  validations:
+  - expression: "false"
+    message: "Dev kubeflow controllers cannot modify Istio resources in production-namespace. Only kubeflow-prod controllers are allowed."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: block-dev-controllers-in-prod-ns
+spec:
+  policyName: block-dev-controllers-in-prod-ns
+  validationActions: [Deny]
